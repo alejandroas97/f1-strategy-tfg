@@ -1,7 +1,8 @@
 """T1.1.1 - Extracción y cacheo local de carreras con OpenF1 (datos desde 2023).
 
 Por cada Gran Premio guarda en data/raw/openf1/<año>/<ronda>_<gp>/:
-  drivers.parquet         número, acrónimo, nombre y equipo de cada piloto
+  session.parquet         carrera y circuito: fechas, ronda, nombre del GP, tipo de circuito
+  drivers.parquet        número, acrónimo, nombre y equipo de cada piloto
   laps.parquet            vueltas: duración total y por sector, velocidades, vuelta de salida de boxes
   stints.parquet          stints: compuesto, vuelta inicial y final, edad del neumático al montarlo
   pit.parquet             paradas: vuelta y duración en el pit lane
@@ -70,16 +71,22 @@ def get(endpoint: str, **params) -> pd.DataFrame:
 def race_calendar(year: int) -> pd.DataFrame:
     """Carreras (domingo) del año con su número de ronda y nombre del GP."""
     races = get("sessions", year=year, session_name="Race", session_type="Race")
-    meetings = get("meetings", year=year)[["meeting_key", "meeting_name"]]
+    meetings = get("meetings", year=year)[["meeting_key", "meeting_name", "meeting_official_name",
+                                           "circuit_type"]]
     races = races.merge(meetings, on="meeting_key", how="left")
     races["date_start"] = pd.to_datetime(races["date_start"], utc=True)
     return races[races["date_start"] < pd.Timestamp.now(tz="UTC")].sort_values("date_start")
 
 
-def extract_race(year: int, rnd: int, name: str, session_key: int) -> dict:
+def extract_race(year: int, rnd: int, name: str, race: pd.Series) -> dict:
     folder = RAW_OPENF1 / str(year) / f"{rnd:02d}_{slug(name)}"
+    session_key = int(race["session_key"])
     info = {"year": year, "round": rnd, "gp": name, "session_key": session_key}
+    # session.parquet: datos de la carrera y del circuito (sale del calendario, sin peticiones extra)
+    session = race.to_frame().T.assign(round=rnd)
     if (folder / "laps.parquet").exists():
+        if not (folder / "session.parquet").exists():
+            to_parquet(session, folder / "session.parquet")
         return info | {"status": "skipped"}
 
     tables = {ep: get(ep, session_key=session_key) for ep in ENDPOINTS}
@@ -87,6 +94,7 @@ def extract_race(year: int, rnd: int, name: str, session_key: int) -> dict:
         return info | {"status": "no_data"}
 
     folder.mkdir(parents=True, exist_ok=True)
+    tables["session"] = session
     # laps.parquet se escribe el último: su existencia marca la carrera como completa
     for ep in sorted(tables, key=lambda ep: ep == "laps"):
         to_parquet(tables[ep], folder / f"{ep}.parquet")
@@ -117,7 +125,7 @@ def main():
             if args.rounds and rnd not in args.rounds:
                 continue
             try:
-                info = extract_race(year, rnd, name, int(race["session_key"]))
+                info = extract_race(year, rnd, name, race)
             except Exception as exc:  # red o límites de la API: se reintenta en la próxima ejecución
                 log.warning("Fallo %s %02d %s: %s", year, rnd, name, exc)
                 info = {"year": year, "round": rnd, "gp": name, "status": "error"}

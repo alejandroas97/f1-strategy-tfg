@@ -11,7 +11,7 @@ para comparar estrategias de paradas frente a un rival reactivo.
 | --- | --- |
 | T1.1.1 Extracción y cacheo (OpenF1 2023-2025: 70 carreras) | Completada |
 | T1.1.1 Extracción FastF1 2018-2022 (requiere F1 TV Access) | Pendiente de decisión |
-| T1.1.2 Limpieza y carga en PostgreSQL | Pendiente |
+| T1.1.2 Limpieza y carga en PostgreSQL | En curso: base de datos y esquema creados |
 | T1.2 Modelo de tiempo por vuelta | Pendiente |
 
 ## Puesta en marcha
@@ -20,6 +20,10 @@ para comparar estrategias de paradas frente a un rival reactivo.
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+
+# Base de datos PostgreSQL (requiere Docker)
+cp .env.example .env               # y cambia la contraseña
+docker compose up -d               # crea el esquema de db/schema.sql la primera vez
 ```
 
 ## Uso
@@ -47,6 +51,10 @@ src/
   extract_fastf1.py   extracción de carreras con caché local -> data/raw/fastf1/
   explore_openf1.py   prueba rápida de la API de OpenF1 con una carrera
   first_look.py       EDA inicial: estrategias, degradación y calidad del dato
+db/
+  schema.sql          esquema relacional (schema f1): circuitos, carreras, pilotos,
+                      vueltas, stints, paradas, dirección de carrera, neutralizaciones, meteo
+docker-compose.yml    PostgreSQL 17 en el puerto 5433
 data/                 (no versionado) datos extraídos
 cache/                (no versionado) caché de FastF1
 outputs/              (no versionado) gráficos
